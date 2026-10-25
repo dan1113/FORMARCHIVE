@@ -85,7 +85,13 @@ async function searchPinterest(env, query, model) {
   const groundedText = candidate?.content?.parts?.map((part) => part.text || "").join("");
   const metadata = candidate?.groundingMetadata;
   if (!groundedText?.trim() || !metadata) {
-    return json({ error: "Gemini가 출처로 확인할 수 있는 Pinterest Pin 결과를 반환하지 않았습니다. Pinterest 검색으로 직접 확인해 주세요." }, 502);
+    return json({
+      source: "pinterest",
+      groundedText: "검색어와 일치하는 출처 확인 가능한 Pinterest 핀을 찾지 못했어요. Pinterest에서 직접 더 찾아볼 수 있어요.",
+      sources: [],
+      suggestions: "",
+      searchUrl: "https://www.pinterest.com/search/pins/?q=" + encodeURIComponent(query)
+    });
   }
 
   const seen = new Set();
@@ -225,11 +231,7 @@ async function search(request, env) {
         })
     : [];
   if (!refs.length) {
-    return json({
-      refs: [],
-      tags: [],
-      explanation: "아카이브에서 가까운 레퍼런스를 찾지 못했어요. 매체나 분위기를 조금 바꿔 검색해 보세요."
-    });
+    return searchPinterest(env, query, model);
   }
 
   const tags = Array.isArray(result.tags)
