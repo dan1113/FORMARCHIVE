@@ -101,7 +101,7 @@ async function searchPinterest(env, query, model) {
     if (!web?.uri || seen.has(web.uri)) continue;
     let sourceUrl;
     try { sourceUrl = new URL(web.uri); } catch { continue; }
-    if (sourceUrl.protocol !== "https:" || !/(^|\\.)pinterest\\.com$/i.test(sourceUrl.hostname) || !/^\\/pin\\/\\d+/.test(sourceUrl.pathname)) continue;
+    if (sourceUrl.protocol !== "https:" || !/(^|\.)pinterest\.com$/i.test(sourceUrl.hostname) || !/^\/pin\/\d+/.test(sourceUrl.pathname)) continue;
     seen.add(sourceUrl.href);
     sources.push({ url: sourceUrl.href, title: typeof web.title === "string" ? web.title : "Pinterest Pin" });
     if (sources.length >= 8) break;
