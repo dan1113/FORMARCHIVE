@@ -32,6 +32,82 @@ function isRateLimited(ip) {
   return current.count > REQUESTS_PER_WINDOW;
 }
 
+async function searchPinterest(env, query, model) {
+  const prompt = [
+    "Search Pinterest for existing visual design works that match the user's request.",
+    "Use Google Search restricted to Pinterest Pin pages with site:pinterest.com/pin.",
+    "Do not use the curated FORMARCHIVE archive for this search. Do not invent project titles, creators, dates, media, or visual details. Only state details supported by the search results; mark unknown facts as unknown.",
+    "Write a concise Korean discovery note with up to five relevant Pins. Attach citation markers to the claims so the user can open the original Pinterest Pin. If no relevant Pin can be grounded, say so plainly.",
+    "The user wants to discover existing works, not have new works generated.",
+    "USER_REQUEST: " + JSON.stringify(query)
+  ].join("\n");
+
+  let upstream;
+  try {
+    upstream = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/" +
+        encodeURIComponent(model) +
+        ":generateContent",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-goog-api-key": env.GEMINI_API_KEY
+        },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          tools: [{ google_search: {} }],
+          generationConfig: { temperature: 0.2, maxOutputTokens: 900 }
+        }),
+        signal: AbortSignal.timeout(30_000)
+      }
+    );
+  } catch {
+    return json({ error: "Pinterest 기반 Gemini 검색에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요." }, 502);
+  }
+
+  if (!upstream.ok) {
+    return json({
+      error: upstream.status === 429
+        ? "Gemini 검색 한도에 도달했습니다. 잠시 후 다시 시도해 주세요."
+        : "Pinterest 기반 Gemini 검색 중 오류가 발생했습니다. Worker secret과 모델 설정을 확인해 주세요."
+    }, upstream.status === 429 ? 429 : 502);
+  }
+
+  let payload;
+  try {
+    payload = await upstream.json();
+  } catch {
+    return json({ error: "Gemini 검색 응답을 읽지 못했습니다." }, 502);
+  }
+
+  const candidate = payload?.candidates?.[0];
+  const groundedText = candidate?.content?.parts?.map((part) => part.text || "").join("");
+  const metadata = candidate?.groundingMetadata;
+  if (!groundedText?.trim() || !metadata) {
+    return json({ error: "Pinterest Pin 검색 결과를 확인하지 못했어요. 검색어를 구체적으로 바꿔 다시 시도해 주세요." }, 502);
+  }
+
+  const seen = new Set();
+  const sources = [];
+  for (const chunk of Array.isArray(metadata.groundingChunks) ? metadata.groundingChunks : []) {
+    const web = chunk?.web;
+    if (!web?.uri || seen.has(web.uri)) continue;
+    seen.add(web.uri);
+    sources.push({ url: web.uri, title: typeof web.title === "string" ? web.title : new URL(web.uri).hostname });
+    if (sources.length >= 8) break;
+  }
+
+  return json({
+    source: "pinterest",
+    groundedText,
+    sources,
+    suggestions: typeof metadata.searchEntryPoint?.renderedContent === "string"
+      ? metadata.searchEntryPoint.renderedContent
+      : ""
+  });
+}
+
 function parseModelJson(text) {
   const cleaned = text.trim().replace(/^`{3}(?:json)?\s*/i, "").replace(/\s*`{3}$/i, "");
   return JSON.parse(cleaned);
@@ -65,6 +141,7 @@ async function search(request, env) {
   if (!/^[a-zA-Z0-9._-]{1,80}$/.test(model)) {
     return json({ error: "Gemini model 설정을 확인해 주세요." }, 500);
   }
+  if (body?.source === "pinterest") return searchPinterest(env, query, model);
 
   const prompt = [
     "당신은 디자인 레퍼런스 아카이브의 검색 편집자입니다.",
