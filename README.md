@@ -11,11 +11,11 @@ This repository is configured for the Worker at `formarchive.dan-1113.workers.de
 3. Redeploy after the secret is added or changed: `npx wrangler deploy`.
 4. Optional: set `GEMINI_MODEL` to choose another supported model. The default is `gemini-3.5-flash-lite`.
 
-The Worker serves the static archive and handles `POST /api/search`. Search requests are limited to 240 characters and rate-limited per client IP. Gemini receives only the eight curated archive records and returns allowlisted record IDs, tags, and short match reasons. The interface displays only those existing records; it does not accept generated projects or source links.
+The Worker serves the static archive and handles `POST /api/search`. Search requests are limited to 240 characters and rate-limited per client IP. The default `source: "archive"` path uses Gemini to select only from the eight curated records and returns allowlisted IDs, tags, and short match reasons. The optional `source: "pinterest"` path enables Gemini Google Search grounding with a Pinterest Pin-focused query; it returns the current grounded answer, citation links, and Google's required Search Suggestions for display to the user who submitted that query. Pinterest-grounded responses are not stored by the Worker or browser.
 
 ## Search behavior
 
-When Gemini is available, the search panel shows the interpreted tags and ranks only selected archive records. If Gemini is unavailable, the page clearly falls back to local keyword matching against the archive.
+The search interface separates `ALL REFERENCES` from `SEARCH PINTEREST`. Archive mode ranks only curated records and falls back to local keyword matching if Gemini is unavailable. Pinterest mode is a separate live web search and does not insert external results into the archive. It renders Google's grounded response and its associated Search Suggestions. Google Search grounding has separate per-query billing; check current Gemini API pricing before increasing usage. Pinterest API OAuth credentials are not required for this Google-grounded discovery path.
 
 Never put a Gemini API key in `index.html`, browser JavaScript, or a committed file. Store it as a Cloudflare Worker secret named `GEMINI_API_KEY`.
 
