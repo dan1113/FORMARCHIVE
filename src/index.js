@@ -99,11 +99,23 @@ async function searchPinterest(env, query, model) {
   for (const chunk of Array.isArray(metadata.groundingChunks) ? metadata.groundingChunks : []) {
     const web = chunk?.web;
     if (!web?.uri || seen.has(web.uri)) continue;
-    seen.add(web.uri);
-    sources.push({ url: web.uri, title: typeof web.title === "string" ? web.title : new URL(web.uri).hostname });
+    let sourceUrl;
+    try { sourceUrl = new URL(web.uri); } catch { continue; }
+    if (sourceUrl.protocol !== "https:" || !/(^|\\.)pinterest\\.com$/i.test(sourceUrl.hostname) || !/^\\/pin\\/\\d+/.test(sourceUrl.pathname)) continue;
+    seen.add(sourceUrl.href);
+    sources.push({ url: sourceUrl.href, title: typeof web.title === "string" ? web.title : "Pinterest Pin" });
     if (sources.length >= 8) break;
   }
 
+  if (!sources.length) {
+    return json({
+      source: "pinterest",
+      groundedText: "확인 가능한 Pinterest 핀을 찾지 못했어요. 검색어를 더 구체적으로 입력하거나 Pinterest에서 직접 확인해 주세요.",
+      sources: [],
+      suggestions: "",
+      searchUrl: "https://www.pinterest.com/search/pins/?q=" + encodeURIComponent(query)
+    });
+  }
   return json({
     source: "pinterest",
     groundedText,
@@ -122,7 +134,8 @@ function parseModelJson(text) {
 async function search(request, env) {
   if (request.method !== "POST") return json({ error: "Use POST for search." }, 405);
   const origin = request.headers.get("Origin");
-  if (origin && origin !== new URL(request.url).origin) {
+  const siteOrigin = "https://formarchive.xoudg.chatgpt.site";
+  if (origin && origin !== new URL(request.url).origin && origin !== siteOrigin) {
     return json({ error: "Cross-origin requests are not allowed." }, 403);
   }
 
@@ -247,7 +260,30 @@ async function search(request, env) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (url.pathname === "/api/search") return search(request, env);
+    if (url.pathname === "/api/search") {
+      const origin = request.headers.get("Origin");
+      const siteOrigin = "https://formarchive.xoudg.chatgpt.site";
+      if (request.method === "OPTIONS") {
+        if (origin !== siteOrigin) return json({ error: "Cross-origin requests are not allowed." }, 403);
+        return new Response(null, { status: 204, headers: {
+          "access-control-allow-origin": siteOrigin,
+          "access-control-allow-methods": "POST, OPTIONS",
+          "access-control-allow-headers": "Content-Type",
+          "access-control-max-age": "86400",
+          "vary": "Origin"
+        }});
+      }
+      const response = await search(request, env);
+      if (origin === siteOrigin) {
+        const headers = new Headers(response.headers);
+        headers.set("access-control-allow-origin", siteOrigin);
+        headers.set("access-control-allow-methods", "POST, OPTIONS");
+        headers.set("access-control-allow-headers", "Content-Type");
+        headers.append("vary", "Origin");
+        return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+      }
+      return response;
+    }
     if (url.pathname.startsWith("/api/")) return json({ error: "API route not found." }, 404);
     return env.ASSETS.fetch(request);
   }
