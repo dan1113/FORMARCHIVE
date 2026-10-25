@@ -34,9 +34,9 @@ function isRateLimited(ip) {
 
 async function searchPinterest(env, query, model) {
   const prompt = [
-    "Search Pinterest for existing visual design works that match the user's request.",
-    "Use Google Search restricted to Pinterest Pin pages with site:pinterest.com/pin.",
-    "Do not use the curated FORMARCHIVE archive for this search. Do not invent project titles, creators, dates, media, or visual details. Only state details supported by the search results; mark unknown facts as unknown.",
+    "You must use the Google Search tool now. Search query: site:pinterest.com/pin " + query,
+    "Find existing visual design works on Pinterest that match the user's request. Do not answer from prior knowledge and do not use the curated FORMARCHIVE archive.",
+    "Do not invent project titles, creators, dates, media, or visual details. Only state details supported by the search results; mark unknown facts as unknown.",
     "Write a concise Korean discovery note with up to five relevant Pins. Attach citation markers to the claims so the user can open the original Pinterest Pin. If no relevant Pin can be grounded, say so plainly.",
     "The user wants to discover existing works, not have new works generated.",
     "USER_REQUEST: " + JSON.stringify(query)
@@ -85,7 +85,9 @@ async function searchPinterest(env, query, model) {
   const groundedText = candidate?.content?.parts?.map((part) => part.text || "").join("");
   const metadata = candidate?.groundingMetadata;
   if (!groundedText?.trim() || !metadata) {
-    return json({ error: "Pinterest Pin 검색 결과를 확인하지 못했어요. 검색어를 구체적으로 바꿔 다시 시도해 주세요." }, 502);
+    const keys = candidate ? Object.keys(candidate).join(",") : "no_candidate";
+    const rawText = (candidate?.content?.parts || []).map((part) => part.text || "").join("").slice(0, 180);
+    return json({ error: "DEBUG keys=" + keys + " text=" + rawText }, 502);
   }
 
   const seen = new Set();
